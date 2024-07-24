@@ -1,0 +1,124 @@
+DELIMITER $$
+
+CREATE TRIGGER create_cart_trigger AFTER INSERT ON user
+FOR EACH ROW
+BEGIN
+    DECLARE cart_count INT;
+
+    -- Check if the user already has a cart
+    SELECT COUNT(*) INTO cart_count
+    FROM CART
+    WHERE Phone_Number = NEW.Phone_Number;
+
+    -- If the user doesn't have a cart, create one
+    IF cart_count = 0 THEN
+        INSERT INTO CART (Phone_Number, Total_Cost)
+        VALUES (NEW.Phone_Number, 0); -- You can set initial total cost to 0 or any other value
+    END IF;
+END$$
+
+DELIMITER ;
+
+-----------------------------------------------------------------------------------------------
+
+DELIMITER $$
+
+CREATE TRIGGER update_cart_total_cost_trigger AFTER INSERT ON Cart_Info
+FOR EACH ROW
+BEGIN
+    DECLARE total_cost DECIMAL(6,2);
+    DECLARE cart_phone_number VARCHAR(10);
+
+    -- Get the phone number associated with the cart
+    SELECT Phone_Number INTO cart_phone_number
+    FROM CART
+    WHERE Cart_ID = NEW.Cart_ID;
+
+    -- Calculate the total cost of the cart
+    SELECT SUM(Price) INTO total_cost
+    FROM Product
+    WHERE Product_ID = NEW.Product_ID;
+
+    -- Update the total cost of the cart
+    UPDATE CART
+    SET Total_Cost = Total_Cost + total_cost
+    WHERE Phone_Number = cart_phone_number;
+END$$
+
+DELIMITER ;
+
+-----------------------------------------------------------------------------------------------
+
+DELIMITER //
+
+CREATE TRIGGER update_user_rating_on_product_sold
+AFTER UPDATE ON Product
+FOR EACH ROW
+BEGIN
+    DECLARE product_owner_phone VARCHAR(10);
+    DECLARE rating DECIMAL(4, 2);
+
+    -- Get the phone number of the product owner
+    SELECT Phone_Number INTO product_owner_phone FROM user WHERE Phone_Number = NEW.Phone_Number;
+
+    -- Check if the "sold" status is set to 1
+    IF NEW.sold = 1 THEN
+        -- Set a particular rating
+        SET rating = 4.5;
+
+        -- Update the user's rating
+        UPDATE user SET User_Rating = rating WHERE Phone_Number = product_owner_phone;
+    END IF;
+END //
+
+DELIMITER ;
+
+------------------------------------------------------------------------------------------------
+
+DELIMITER //
+
+CREATE TRIGGER update_user_rating_after_feedback_insert
+AFTER INSERT ON Feedback
+FOR EACH ROW
+BEGIN
+    DECLARE avg_rating DECIMAL(4, 2);
+    DECLARE total_rating DECIMAL(6, 2);
+    DECLARE total_feedbacks INT;
+
+    -- Calculate the total rating for the user
+    SELECT SUM(Rating) INTO total_rating
+    FROM Feedback
+    WHERE Phone_Number = NEW.Phone_Number;
+
+    -- Count the total number of feedbacks for the user
+    SELECT COUNT(*) INTO total_feedbacks
+    FROM Feedback
+    WHERE Phone_Number = NEW.Phone_Number;
+
+    -- Calculate the average rating
+    IF total_feedbacks > 0 THEN
+        SET avg_rating = total_rating / total_feedbacks;
+    ELSE
+        SET avg_rating = 0;
+    END IF;
+
+    -- Update the User_Rating in the user table
+    UPDATE user
+    SET User_Rating = avg_rating
+    WHERE Phone_Number = NEW.Phone_Number;
+END//
+
+------------------------------------------------------------------------------------------------
+
+DELIMITER //
+CREATE TRIGGER remove_sold_from_cart
+AFTER UPDATE ON Product
+FOR EACH ROW
+BEGIN
+  DELETE CI
+  FROM Cart_Info CI
+  INNER JOIN Cart C ON CI.Cart_ID = C.Cart_ID
+  WHERE CI.Product_ID = OLD.Product_ID AND NEW.sold = 1;
+END;
+//
+DELIMITER ;
